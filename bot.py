@@ -7,6 +7,7 @@ Ejecutado periódicamente vía GitHub Actions y notificado a través de Telegram
 import os
 import sys
 import json
+import re
 import time
 import logging
 import hashlib
