@@ -30,7 +30,31 @@ logger = logging.getLogger("JobMonitorBot")
 
 STATE_FILE = os.path.join(os.path.dirname(__file__), "vistos.json")
 MAX_STORED_JOBS = 1000  # Límite circular para evitar crecimiento indefinido de vistos.json
-MAX_ALERTS_PER_RUN = 10  # Límite de mensajes por ciclo para evitar flooding en Telegram
+MAX_ALERTS_PER_RUN = 20  # Límite ampliado a 20 alertas por ciclo
+
+# Filtro regex optimizado para el ecosistema React (React, React Native, Next.js, etc.)
+REACT_REGEX = re.compile(
+    r"\b(react|reactjs|react\.js|react\s*native|nextjs|next\.js)\b",
+    re.IGNORECASE
+)
+
+
+def is_react_job(job: Dict[str, Any]) -> bool:
+    """Determina si una vacante pertenece al ecosistema React analizando título, tags y descripción."""
+    # 1. Analizar título
+    if REACT_REGEX.search(job.get("title", "")):
+        return True
+
+    # 2. Analizar etiquetas/tags
+    for tag in job.get("tags", []):
+        if REACT_REGEX.search(tag):
+            return True
+
+    # 3. Analizar descripción/resumen
+    if REACT_REGEX.search(job.get("description", "")):
+        return True
+
+    return False
 
 HEADERS = {
     "User-Agent": (
@@ -310,22 +334,27 @@ def run_bot() -> None:
 
     # 2. Filtrado contra estado histórico
     new_jobs = [j for j in all_jobs if not state_manager.is_seen(j["id"])]
-    logger.info(f"Nuevas vacantes no notificadas: {len(new_jobs)}")
+    logger.info(f"Nuevas vacantes detectadas en total: {len(new_jobs)}")
 
     if not new_jobs:
         logger.info("No hay nuevas vacantes en este ciclo. Finalizando.")
         return
 
-    # 3. Notificación con rate-limiting preventivo
+    # 3. Filtrar por stack React
+    react_jobs = [j for j in new_jobs if is_react_job(j)]
+    logger.info(f"Vacantes filtradas que coinciden con React: {len(react_jobs)}")
+
+    # 4. Notificar vacantes de React con rate-limiting preventivo
     alert_count = 0
-    for job in new_jobs:
+    for job in react_jobs:
         if alert_count < MAX_ALERTS_PER_RUN:
             success = notifier.send_job_alert(job)
             if success:
                 alert_count += 1
                 time.sleep(1.0)  # Throttling preventivo Telegram API
 
-        # Marcamos como visto para evitar reenvíos futuros
+    # 5. Marcar TODAS las nuevas vacantes como vistas para no reprocesarlas
+    for job in new_jobs:
         state_manager.mark_seen(job["id"])
 
     # 4. Persistir estado en disco
