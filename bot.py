@@ -315,12 +315,138 @@ class JobScraper:
 
         return jobs
 
+
+    def scrape_jobicy(self) -> List[Dict[str, Any]]:
+        """Extrae vacantes de ingeniería y desarrollo desde la API de Jobicy."""
+        url = "https://jobicy.com/api/v2/remote-jobs?count=30&industry=engineering"
+        jobs: List[Dict[str, Any]] = []
+        logger.info(f"Extrayendo vacantes de Jobicy: {url}")
+
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get("jobs", []):
+                    title = item.get("jobTitle", "").strip()
+                    job_url = item.get("url", "").strip()
+                    if not title or not job_url:
+                        continue
+
+                    company = item.get("companyName", "").strip() or "Jobicy Partner"
+                    location = item.get("jobGeo", "Remoto").strip()
+                    unique_id = self._generate_id(f"jobicy_{item.get('id', job_url)}")
+                    desc = self.clean_html(item.get("jobExcerpt", ""))
+
+                    jobs.append({
+                        "id": unique_id,
+                        "title": title,
+                        "company": company,
+                        "url": job_url,
+                        "location": location,
+                        "source": "Jobicy",
+                        "tags": ["Engineering", "Remote"],
+                        "description": desc,
+                        "date": item.get("pubDate", "")
+                    })
+            logger.info(f"Jobicy: {len(jobs)} vacantes procesadas.")
+        except Exception as e:
+            logger.error(f"Error procesando Jobicy: {e}")
+
+        return jobs
+
+    def scrape_getonboard(self) -> List[Dict[str, Any]]:
+        """Extrae vacantes de programación de Get on Board (LatAm y Global)."""
+        url = "https://www.getonbrd.com/api/v0/categories/programming/jobs?per_page=30"
+        jobs: List[Dict[str, Any]] = []
+        logger.info(f"Extrayendo vacantes de Get on Board: {url}")
+
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=15)
+            if response.status_code == 200:
+                data = response.json().get("data", [])
+                for item in data:
+                    attr = item.get("attributes", {})
+                    if not attr.get("remote", False):
+                        continue
+
+                    title = attr.get("title", "").strip()
+                    links = item.get("links", {})
+                    job_url = links.get("public_url", "").strip()
+                    if not title or not job_url:
+                        continue
+
+                    location = attr.get("remote_zone") or "Remoto (LatAm / Global)"
+                    desc = self.clean_html(attr.get("description", ""))
+                    unique_id = self._generate_id(f"getonbrd_{item.get('id', job_url)}")
+
+                    jobs.append({
+                        "id": unique_id,
+                        "title": title,
+                        "company": "Empresa Confidencial (Get on Board)",
+                        "url": job_url,
+                        "location": location,
+                        "source": "Get on Board",
+                        "tags": ["LatAm Tech", "Software"],
+                        "description": desc,
+                        "date": attr.get("published_at", "")
+                    })
+            logger.info(f"Get on Board: {len(jobs)} vacantes procesadas.")
+        except Exception as e:
+            logger.error(f"Error procesando Get on Board: {e}")
+
+        return jobs
+
+    def scrape_arbeitnow(self) -> List[Dict[str, Any]]:
+        """Extrae vacantes tech remotas desde la API pública de Arbeitnow."""
+        url = "https://www.arbeitnow.com/api/job-board-api"
+        jobs: List[Dict[str, Any]] = []
+        logger.info(f"Extrayendo vacantes de Arbeitnow: {url}")
+
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=15)
+            if response.status_code == 200:
+                data = response.json().get("data", [])
+                for item in data[:50]:
+                    if not item.get("remote", False):
+                        continue
+
+                    title = item.get("title", "").strip()
+                    job_url = item.get("url", "").strip()
+                    if not title or not job_url:
+                        continue
+
+                    company = item.get("company_name", "Arbeitnow Partner").strip()
+                    tags = item.get("tags", [])
+                    desc = self.clean_html(item.get("description", ""))
+                    unique_id = self._generate_id(f"arbeitnow_{item.get('slug', job_url)}")
+
+                    jobs.append({
+                        "id": unique_id,
+                        "title": title,
+                        "company": company,
+                        "url": job_url,
+                        "location": "Remoto (Global / EU)",
+                        "source": "Arbeitnow",
+                        "tags": tags[:4] if tags else ["Tech"],
+                        "description": desc,
+                        "date": ""
+                    })
+            logger.info(f"Arbeitnow: {len(jobs)} vacantes procesadas.")
+        except Exception as e:
+            logger.error(f"Error procesando Arbeitnow: {e}")
+
+        return jobs
+
     def fetch_all_jobs(self) -> List[Dict[str, Any]]:
         """Consolida vacantes de todas las fuentes configuradas."""
         all_jobs: List[Dict[str, Any]] = []
         all_jobs.extend(self.scrape_we_work_remotely())
         all_jobs.extend(self.scrape_remotive())
+        all_jobs.extend(self.scrape_jobicy())
+        all_jobs.extend(self.scrape_getonboard())
+        all_jobs.extend(self.scrape_arbeitnow())
         return all_jobs
+
 
 
 def run_bot() -> None:
